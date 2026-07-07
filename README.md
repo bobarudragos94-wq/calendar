@@ -42,10 +42,25 @@ deci nu ai nevoie de migrări manuale.
 
 ### Creare bază Turso
 
+Cel mai simplu, cu scriptul inclus (creează baza și afișează variabilele gata de copiat):
+
+```bash
+bash scripts/setup-db.sh              # sau: bash scripts/setup-db.sh nume-baza
+```
+
+Sau manual:
+
 ```bash
 turso db create cand-ne-vedem
 turso db show cand-ne-vedem --url          # -> TURSO_DATABASE_URL
 turso db tokens create cand-ne-vedem       # -> TURSO_AUTH_TOKEN
+```
+
+Schema se creează automat la primul request. Dacă vrei tabelele de la început,
+poți aplica manual `db/schema.sql`:
+
+```bash
+turso db shell cand-ne-vedem < db/schema.sql
 ```
 
 ## Cum funcționează
