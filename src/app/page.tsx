@@ -84,9 +84,8 @@ export default function HomePage() {
       });
       const data = await safeJson(res);
       if (!res.ok || !data?.code) {
-        throw new Error(
-          data?.error || `Eroare la creare (${res.status}). Verifică variabilele Turso.`
-        );
+        const base = data?.error || `Eroare la creare (${res.status}).`;
+        throw new Error(data?.detail ? `${base} (${data.detail})` : base);
       }
       try {
         localStorage.setItem(`owner:${data.code}`, data.ownerToken);
