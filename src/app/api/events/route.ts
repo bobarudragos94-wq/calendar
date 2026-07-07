@@ -22,7 +22,18 @@ function isDate(s: unknown): s is string {
 
 // POST /api/events -> creeaza un event nou si returneaza codul de join.
 export async function POST(req: NextRequest) {
-  await ensureSchema();
+  try {
+    await ensureSchema();
+  } catch (e: any) {
+    return NextResponse.json(
+      {
+        error:
+          "Baza de date nu este configurată. Setează TURSO_DATABASE_URL și TURSO_AUTH_TOKEN.",
+        detail: e?.message ?? String(e),
+      },
+      { status: 503 }
+    );
+  }
   let body: any;
   try {
     body = await req.json();
@@ -79,42 +90,49 @@ export async function POST(req: NextRequest) {
   const ownerToken = crypto.randomUUID();
   const now = Date.now();
 
-  // Genereaza un cod unic (reincercari daca exista coliziune).
-  let code = "";
-  for (let attempt = 0; attempt < 6; attempt++) {
-    code = makeCode();
-    const existing = await client.execute({
-      sql: "SELECT 1 FROM events WHERE code = ?",
-      args: [code],
+  try {
+    // Genereaza un cod unic (reincercari daca exista coliziune).
+    let code = "";
+    for (let attempt = 0; attempt < 6; attempt++) {
+      code = makeCode();
+      const existing = await client.execute({
+        sql: "SELECT 1 FROM events WHERE code = ?",
+        args: [code],
+      });
+      if (existing.rows.length === 0) break;
+      code = "";
+    }
+    if (!code) {
+      return NextResponse.json(
+        { error: "Nu am putut genera un cod. Incearca din nou." },
+        { status: 500 }
+      );
+    }
+
+    await client.execute({
+      sql: `INSERT INTO events
+        (id, code, title, start_date, end_date, day_start_min, day_end_min, slot_minutes, meeting_minutes, owner_token, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        code,
+        title,
+        startDate,
+        endDate,
+        dayStartMin,
+        dayEndMin,
+        slotMinutes,
+        meetingMinutes,
+        ownerToken,
+        now,
+      ],
     });
-    if (existing.rows.length === 0) break;
-    code = "";
-  }
-  if (!code) {
+
+    return NextResponse.json({ code, ownerToken });
+  } catch (e: any) {
     return NextResponse.json(
-      { error: "Nu am putut genera un cod. Incearca din nou." },
+      { error: "Eroare la baza de date.", detail: e?.message ?? String(e) },
       { status: 500 }
     );
   }
-
-  await client.execute({
-    sql: `INSERT INTO events
-      (id, code, title, start_date, end_date, day_start_min, day_end_min, slot_minutes, meeting_minutes, owner_token, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      id,
-      code,
-      title,
-      startDate,
-      endDate,
-      dayStartMin,
-      dayEndMin,
-      slotMinutes,
-      meetingMinutes,
-      ownerToken,
-      now,
-    ],
-  });
-
-  return NextResponse.json({ code, ownerToken });
 }

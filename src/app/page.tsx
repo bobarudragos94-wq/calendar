@@ -31,6 +31,17 @@ function timeToMin(t: string): number {
   return h * 60 + m;
 }
 
+/** Parseaza raspunsul ca JSON in siguranta; nu arunca daca body-ul e gol/HTML. */
+async function safeJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export default function HomePage() {
   const router = useRouter();
   const today = todayStr();
@@ -71,8 +82,12 @@ export default function HomePage() {
           meetingMinutes,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Eroare la creare.");
+      const data = await safeJson(res);
+      if (!res.ok || !data?.code) {
+        throw new Error(
+          data?.error || `Eroare la creare (${res.status}). Verifică variabilele Turso.`
+        );
+      }
       try {
         localStorage.setItem(`owner:${data.code}`, data.ownerToken);
       } catch {}
