@@ -18,6 +18,17 @@ export interface EventRow {
   meeting_minutes: number;
   owner_token: string;
   created_at: number;
+  /** ora finala aleasa de organizator (optional) */
+  chosen_date: string | null;
+  chosen_start_min: number | null;
+  chosen_end_min: number | null;
+}
+
+/** Ora finala a meeting-ului, aleasa de organizator. */
+export interface ChosenSlot {
+  date: string;
+  startMin: number;
+  endMin: number;
 }
 
 /** Reprezentarea publica a unui event (fara owner_token). */
@@ -31,6 +42,8 @@ export interface EventPublic {
   slotMinutes: number;
   meetingMinutes: number;
   participants: { id: string; name: string }[];
+  /** ora finala aleasa de organizator, daca exista */
+  chosen: ChosenSlot | null;
 }
 
 export interface ParticipantRow {

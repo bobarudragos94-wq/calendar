@@ -43,7 +43,10 @@ export function ensureSchema(): Promise<void> {
           slot_minutes INTEGER NOT NULL,
           meeting_minutes INTEGER NOT NULL,
           owner_token TEXT NOT NULL,
-          created_at INTEGER NOT NULL
+          created_at INTEGER NOT NULL,
+          chosen_date TEXT,
+          chosen_start_min INTEGER,
+          chosen_end_min INTEGER
         )`,
         `CREATE TABLE IF NOT EXISTS participants (
           id TEXT PRIMARY KEY,
@@ -58,6 +61,18 @@ export function ensureSchema(): Promise<void> {
       ],
       "write"
     );
+    // Migrari pentru baze create inainte de coloanele "chosen_*".
+    for (const stmt of [
+      "ALTER TABLE events ADD COLUMN chosen_date TEXT",
+      "ALTER TABLE events ADD COLUMN chosen_start_min INTEGER",
+      "ALTER TABLE events ADD COLUMN chosen_end_min INTEGER",
+    ]) {
+      try {
+        await client.execute(stmt);
+      } catch {
+        // coloana exista deja
+      }
+    }
   })().catch((e) => {
     // Permite reincercarea la urmatorul request daca a esuat.
     _schemaReady = null;

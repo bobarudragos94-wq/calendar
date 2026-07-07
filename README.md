@@ -55,6 +55,16 @@ turso db tokens create cand-ne-vedem       # -> TURSO_AUTH_TOKEN
 3. **Rezultate** — heatmap-ul arată câți sunt liberi la fiecare slot; lista de jos arată
    intervalele comune, cu ✓ pe cele ≥ durata meeting-ului. Click pe o celulă din heatmap arată
    exact cine e liber și cine e ocupat în acel slot.
+4. **Alegi ora finală** (doar organizatorul) — apeși „Alege” pe intervalul dorit; blocul de meeting
+   se fixează cu durata cerută. Ora aleasă apare tuturor într-un banner cu butoane de
+   **adăugare în calendar**.
+5. **Adaugă în calendar** — butonul generează un fișier **`.ics`** (standard iCalendar):
+   pe iPhone deschide aplicația Calendar, pe Android deschide Google Calendar. Există și un link
+   direct „Google Calendar” (cu fusul orar al dispozitivului). Orice participant poate adăuga și
+   direct un interval din listă, fără să aștepte alegerea organizatorului.
+
+Rutele implicate: `POST /api/events/[code]/choose` (protejată cu `ownerToken`) și
+`GET /api/events/[code]/ics?date&start&end` (dacă lipsesc parametrii, folosește ora aleasă).
 
 ## Structură
 

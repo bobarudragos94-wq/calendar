@@ -17,6 +17,7 @@ export default function EventClient({ code }: { code: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [token, setToken] = useState<string | null>(null);
+  const [ownerToken, setOwnerToken] = useState<string | null>(null);
   const [myName, setMyName] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [joining, setJoining] = useState(false);
@@ -53,8 +54,10 @@ export default function EventClient({ code }: { code: string }) {
     try {
       const t = localStorage.getItem(`participant:${code}`);
       const n = localStorage.getItem(`participantName:${code}`);
+      const o = localStorage.getItem(`owner:${code}`);
       if (t) setToken(t);
       if (n) setMyName(n);
+      if (o) setOwnerToken(o);
     } catch {}
     return () => {
       alive = false;
@@ -402,7 +405,9 @@ export default function EventClient({ code }: { code: string }) {
         <ResultsView
           grid={grid}
           results={results}
+          code={code}
           meetingMinutes={event.meetingMinutes}
+          ownerToken={ownerToken}
           onRefresh={loadResults}
         />
       )}
@@ -528,25 +533,102 @@ function MyAvailability({
 function ResultsView({
   grid,
   results,
+  code,
   meetingMinutes,
+  ownerToken,
   onRefresh,
 }: {
   grid: ReturnType<typeof buildGrid>;
   results: ResultsResponse | null;
+  code: string;
   meetingMinutes: number;
+  ownerToken: string | null;
   onRefresh: () => void;
 }) {
   const [detail, setDetail] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const isOwner = !!ownerToken;
+
+  async function choose(date: string, startMin: number, intervalEnd: number) {
+    if (!ownerToken) return;
+    setBusy(true);
+    // Blocul de meeting incepe la startul intervalului, cu durata ceruta
+    // (limitat la finalul intervalului comun).
+    const endMin = Math.min(startMin + meetingMinutes, intervalEnd);
+    try {
+      const res = await fetch(`/api/events/${code}/choose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerToken, date, startMin, endMin }),
+      });
+      if (res.ok) await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearChoice() {
+    if (!ownerToken) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/events/${code}/choose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerToken, clear: true }),
+      });
+      if (res.ok) await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!results) {
     return <div className="py-10 text-center text-slate-400">Se calculează…</div>;
   }
 
   const { total, counts, common, availability } = results;
+  const chosen = results.event.chosen;
+  const title = results.event.title;
   const fitting = common.filter((c) => c.fitsMeeting);
 
   return (
     <div>
+      {/* Banner ora aleasa + adaugare in calendar */}
+      {chosen && (
+        <div className="mb-4 rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-4 dark:border-emerald-600 dark:bg-emerald-950">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                ✓ Ora stabilită
+              </div>
+              <div className="mt-0.5 text-lg font-bold capitalize">
+                {formatDateLong(chosen.date)}
+              </div>
+              <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                {minutesToLabel(chosen.startMin)} – {minutesToLabel(chosen.endMin)}
+              </div>
+            </div>
+            {isOwner && (
+              <button
+                onClick={clearChoice}
+                disabled={busy}
+                className="shrink-0 text-xs text-slate-400 underline hover:text-slate-600"
+              >
+                anulează
+              </button>
+            )}
+          </div>
+          <AddToCalendar
+            code={code}
+            title={title}
+            date={chosen.date}
+            startMin={chosen.startMin}
+            endMin={chosen.endMin}
+          />
+        </div>
+      )}
+
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-slate-500">
           {total === 0
@@ -610,40 +692,68 @@ function ResultsView({
                 </>
               )}
             </p>
+            {isOwner && !chosen && (
+              <p className="mb-2 text-xs text-slate-400">
+                Ești organizatorul — apasă <span className="font-medium">„Alege”</span> pe intervalul
+                dorit ca să-l fixezi pentru toți.
+              </p>
+            )}
             <ul className="space-y-2">
-              {common.map((c, i) => (
-                <li
-                  key={i}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                    c.fitsMeeting
-                      ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
-                      : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
-                  }`}
-                >
-                  <div>
-                    <div className="text-sm font-semibold capitalize">
-                      {formatDateLong(c.date)}
-                    </div>
-                    <div className="text-sm text-slate-600 dark:text-slate-300">
-                      {minutesToLabel(c.startMin)} – {minutesToLabel(c.endMin)}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div
-                      className={`text-sm font-bold ${
-                        c.fitsMeeting ? "text-emerald-600" : "text-slate-400"
-                      }`}
-                    >
-                      {formatDuration(c.durationMin)}
-                    </div>
-                    {c.fitsMeeting && (
-                      <div className="text-[10px] font-medium uppercase text-emerald-500">
-                        ✓ încape
+              {common.map((c, i) => {
+                const isChosen =
+                  !!chosen && chosen.date === c.date && chosen.startMin === c.startMin;
+                return (
+                  <li
+                    key={i}
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isChosen
+                        ? "border-emerald-400 bg-emerald-100 dark:border-emerald-500 dark:bg-emerald-900"
+                        : c.fitsMeeting
+                        ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
+                        : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold capitalize">
+                        {formatDateLong(c.date)}
                       </div>
-                    )}
-                  </div>
-                </li>
-              ))}
+                      <div className="text-sm text-slate-600 dark:text-slate-300">
+                        {minutesToLabel(c.startMin)} – {minutesToLabel(c.endMin)}
+                        <span
+                          className={`ml-2 font-bold ${
+                            c.fitsMeeting ? "text-emerald-600" : "text-slate-400"
+                          }`}
+                        >
+                          {formatDuration(c.durationMin)}
+                          {c.fitsMeeting ? " ✓" : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {isChosen ? (
+                        <span className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white">
+                          ✓ Ales
+                        </span>
+                      ) : isOwner ? (
+                        <button
+                          onClick={() => choose(c.date, c.startMin, c.endMin)}
+                          disabled={busy}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
+                        >
+                          Alege
+                        </button>
+                      ) : (
+                        <a
+                          href={`/api/events/${code}/ics?date=${c.date}&start=${c.startMin}&end=${c.endMin}`}
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          📅 Adaugă
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
@@ -822,6 +932,66 @@ function Grid({
           return cells;
         })}
       </div>
+    </div>
+  );
+}
+
+/* ---------- Adauga in calendar (iPhone / Android) ---------- */
+
+function icsDateTime(date: string, minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${date.replace(/-/g, "")}T${String(h).padStart(2, "0")}${String(m).padStart(
+    2,
+    "0"
+  )}00`;
+}
+
+function googleCalUrl(title: string, date: string, startMin: number, endMin: number): string {
+  let tz = "";
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {}
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: title,
+    dates: `${icsDateTime(date, startMin)}/${icsDateTime(date, endMin)}`,
+  });
+  if (tz) params.set("ctz", tz);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function AddToCalendar({
+  code,
+  title,
+  date,
+  startMin,
+  endMin,
+}: {
+  code: string;
+  title: string;
+  date: string;
+  startMin: number;
+  endMin: number;
+}) {
+  const icsUrl = `/api/events/${code}/ics?date=${date}&start=${startMin}&end=${endMin}`;
+  const gUrl = googleCalUrl(title, date, startMin, endMin);
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <a
+        href={icsUrl}
+        className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+      >
+        📅 Adaugă în calendar
+      </a>
+      <a
+        href={gUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+      >
+        Google Calendar
+      </a>
     </div>
   );
 }
